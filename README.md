@@ -16,12 +16,14 @@ This repository is currently a dumping ground as we collect ongoing work from va
 - [Alard & Lupton 1998](https://ui.adsabs.harvard.edu/abs/1998ApJ...503..325A/abstract): A Method for Optimal Image Subtraction
 - [Zackay, et al. (2016) ](https://ui.adsabs.harvard.edu/abs/2016ApJ...830...27Z/abstract): Proper Image Subtraction—Optimal Transient Detection, Photometry, and Hypothesis Testing
 
-#### Technical Notes
+#### Internal Documentation
+- [DC2 Data Products Overview](https://confluence.slac.stanford.edu/display/LSSTDESC/DC2+Data+Product+Overview)
 - [DMTN-021](https://dmtn-021.lsst.io): Implementation of Image Difference Decorrelation
 - [DMTN-061](https://dmtn-061.lsst.io): State of image subtraction in the LSST stack
 
 #### Repos
 - [Difference Image Analysis Pipeline](https://github.com/LSSTDESC/dia_pipe)
+- [DC2 Analysis Tutorials](https://github.com/LSSTDESC/DC2-analysis)
 
 ## Running Image Subtraction at NERSC
 
