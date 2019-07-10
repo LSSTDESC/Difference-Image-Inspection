@@ -4,6 +4,7 @@
 import sys
 from pathlib import Path
 
+# Todo: Find a way to do this that doesn't involve my user directory
 # User installed packages
 site_pckgs_path = '/global/u1/d/djp81/.local/lib/python3.6/site-packages'
 gcr_catalogs_path = '/global/u1/d/djp81/gcr-catalogs'
@@ -119,7 +120,6 @@ def match_truth_catalog(source_ctlg, truth_ctlg, radius=1):
     """
 
     radius = afw_geom.Angle(radius, afw_geom.arcseconds)
-    tqdm.write(str((type(source_ctlg), type(truth_ctlg))))
     matches = afw_table.matchRaDec(source_ctlg, truth_ctlg, radius)
 
     out_table = Table(
@@ -152,61 +152,76 @@ def match_truth_catalog(source_ctlg, truth_ctlg, radius=1):
     return out_table
 
 
-# Todo
-def create_postage_stamp(butler, out_path, data_id, ra, dec, cutout_size):
+def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length):
     """Create a singe postage stamp and save it to file
 
     Args:
         butler     (Butler): A data access butler
-        out_path     (Path): Output path of fits file
+        out_path      (str): Output path of fits file
         data         (dict): A valid data identifier
-        ra          (float): RA coordinate of cutout in degrees
-        dec         (float): Dec coordinate of cutout in degrees
-        cutout_size (float): Side length of cutout in pixels
+        xpix        (float): x pixel coordinate of cutout in degrees
+        ypix        (float): y pixel coordinate of cutout in degrees
+        side_length (float): Side length of cutout in pixels
     """
 
-    pass
+    cutout_size = afw_geom.ExtentI(side_length, side_length)
+    xy = afw_geom.PointI(xpix, ypix)
+    bbox = afw_geom.BoxI(xy - cutout_size // 2, cutout_size)
+
+    cutout_image = butler.get(
+        'deepDiff_differenceExp_sub',
+        bbox=bbox,
+        immediate=True,
+        dataId=data_id)
+
+    cutout_image.writeFits(str(out_path))
 
 
 def save_stamps(butler, out_dir, data_id_list, cutout_size):
     """Create postage stamps for a list of data ids
-    
+
     Creates postage stamps for all sources found for all data ids.
-    
+
     Args:
         butler           (Butler): A data access butler
         out_dir            (Path): Output directory for fits files
         data_id_list (list[dict]): A list of dataID values
         cutout_size       (float): Side length of cutout in pixels
     """
-    
-    for data_id in data_id_list:
+
+    for data_id in tqdm(data_id_list, position=0, desc='Images'):
         file_pattern = (
             f"{data_id['visit']}-{data_id['filter']}-{data_id['raftName']}-"
             f"{data_id['detectorName']}-{data_id['detector']}-{{}}.fits"
         )
 
-        for source in butler.get('deepDiff_diaSrc', dataId=data_id):
+        sources = butler.get('deepDiff_diaSrc', dataId=data_id)
+        for source in tqdm(sources, position=1, desc='Sources'):
             out_path = out_dir / file_pattern.format(source['id'])
+            x_pix = source['base_NaiveCentroid_x']
+            y_pix = source['base_NaiveCentroid_y']
+
+            # noinspection PyTypeChecker
             create_postage_stamp(
                 butler,
                 out_path,
                 data_id,
-                source['coord_ra'],  # Todo: Convert to correct units
-                source['coord_dec'],
+                x_pix,
+                y_pix,
                 cutout_size
             )
 
 
-def main(diff_im_dir, postage_output_dir):
+def main(diff_im_dir, out_dir, cutout_size):
     """Create postage stamps for all DIA sources
-    
+
     Args:
-        diff_im_dir        (str): Output directory of DIA pipeline
-        postage_output_dir (str): Directory to save postave stamps into
+        diff_im_dir   (str): Output directory of DIA pipeline
+        out_dir       (str): Directory to save postave stamps into
+        cutout_size (float): Side length of postage stamps in pixels
     """
 
-    postage_output_dir = Path(postage_output_dir).resolve()
+    out_dir = Path(out_dir).resolve()
 
     tqdm.write('Initializing butler...')
     butler = dafPersist.Butler(diff_im_dir)
@@ -228,16 +243,16 @@ def main(diff_im_dir, postage_output_dir):
     tqdm.write('Building truth catalog...')
     truth_ctlg = get_truth_catalog()
 
-    tqdm.write('Crossmatching with truth catalog...')
+    tqdm.write('Cross matching with truth catalog...')
     xm_results = match_truth_catalog(src_ctlg, truth_ctlg)
-    out_path = postage_output_dir / 'xmatch.csv'
+    out_path = out_dir / 'xmatch.csv'
     tqdm.write(f'Writing to {out_path}')
     xm_results.write(out_path, overwrite=True)
 
     tqdm.write('Creating postage stamps...')
-    save_stamps(butler, data_id_list)
+    save_stamps(butler, out_dir, data_id_list, cutout_size)
 
 
 # Todo: Switch to CLI parsing for arguments
 if __name__ == '__main__':
-    main('/global/u1/d/djp81/test_imdiff/', './stamps')
+    main('/global/u1/d/djp81/test_imdiff/', './stamps', 10)
