@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.6
 # -*- coding: UTF-8 -*-
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -227,15 +228,7 @@ def main(diff_im_dir, out_dir, cutout_size):
     butler = dafPersist.Butler(diff_im_dir)
 
     tqdm.write('Checking for valid dataId values...')
-    # Todo: For development we skip the next line because it's slow
-    # data_id_list = get_valid_ids(butler)
-    data_id_list = [
-        {'visit': 431306,
-         'filter': 'u',
-         'raftName': 'R10',
-         'detectorName': 'S01',
-         'detector': 28}
-    ]
+    data_id_list = get_valid_ids(butler)
 
     tqdm.write('Building source catalog...')
     src_ctlg = get_diasrc_catalog(butler, data_id_list)
@@ -253,6 +246,27 @@ def main(diff_im_dir, out_dir, cutout_size):
     save_stamps(butler, out_dir, data_id_list, cutout_size)
 
 
-# Todo: Switch to CLI parsing for arguments
 if __name__ == '__main__':
-    main('/global/u1/d/djp81/test_imdiff/', './stamps', 10)
+    parser = argparse.ArgumentParser(
+        description='Create postage stamps from DIA pipeline results')
+
+    parser.add_argument(
+        '-d', '--diff_dir',
+        type=str,
+        required=True,
+        help='Path of DIA pipeline output directory')
+
+    parser.add_argument(
+        '-o', '--out_dir',
+        type=str,
+        required=True,
+        help='Where to write postage stamps')
+
+    parser.add_argument(
+        '-s', '--cutout_size',
+        type=int,
+        required=True,
+        help='Side length of cutout images')
+
+    args = parser.parse_args()
+    main(args.diff_dir, args.out_dir, args.cutout_size)
