@@ -269,4 +269,8 @@ if __name__ == '__main__':
         help='Side length of cutout images')
 
     args = parser.parse_args()
-    main(args.diff_dir, args.out_dir, args.cutout_size)
+    out = Path(args.out_dir)
+    if not out.exists():
+        out.mkdir(parents=True, exist_ok=True)
+
+    main(args.diff_dir, out, args.cutout_size)
