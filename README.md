@@ -51,6 +51,8 @@ config.imageDifference.subtract['zogy'].zogyConfig.inImageSpace=False
 Image subtraction can then be run for a specific visit as follows:
 
 ```bash
+source /global/cscratch1/sd/rearmstr/example_diffim/setup.sh
+
 imageDifferenceDriver.py /global/cscratch1/sd/rearmstr/example_diffim/Run1.2_data/rerun/coadd-v4 \
     --output test_imdiff --id visit=431306 detector=28 \
     -C diffimConfig.py --config imageDifference.subtract='zogy' \
