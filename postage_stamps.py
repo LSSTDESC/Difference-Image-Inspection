@@ -3,6 +3,7 @@
 
 import argparse
 import sys
+from copy import copy
 from pathlib import Path
 
 # Todo: Find a way to do this that doesn't involve my user directory
@@ -12,7 +13,7 @@ gcr_catalogs_path = '/global/u1/d/djp81/gcr-catalogs'
 sys.path.extend((site_pckgs_path, gcr_catalogs_path))
 
 import numpy as np
-from astropy.table import Table, vstack
+from astropy.table import Table, vstack, hstack
 from tqdm import tqdm
 from astropy.coordinates import SkyCoord
 from astropy import units as u
@@ -33,16 +34,9 @@ def get_valid_dataids(butler, **kwargs):
     """
 
     subset = butler.subset('deepDiff_diaSrc')
-    id_list = []
-    for dr in tqdm(subset):
-        if not dr.datasetExists():
-            break
-
-        data_id = dr.dataId
-        for key, value in kwargs.items():
-            if data_id[key] == value:
-                id_list.append(data_id)
-
+    id_list = [dr.dataId for dr in tqdm(subset) if dr.datasetExists()]
+    if not id_list:
+        raise RuntimeError('No valid dataId found.')
     return id_list
 
 
@@ -55,16 +49,16 @@ def get_truth_catalog():
 
     # Load truth data
     truth_gcr = GCRCatalogs.load_catalog('dc2_truth_run1.2_variable_summary')
-    truth_data = truth_gcr.get_quantities([])
+    truth_data = truth_gcr.get_quantities(['uniqueId', 'ra', 'dec'])
 
     truth_table = Table(
         data=[truth_data['uniqueId'], truth_data['ra'], truth_data['dec']],
-        names=['src_id', 'coord_ra', 'coord_dec'],
+        names=['truth_id', 'truth_ra', 'truth_dec'],
         dtype=[np.int64, float, float]
     )
 
-    truth_table['coord_ra'].unit = u.degree
-    truth_table['coord_dec'].unit = u.degree
+    truth_table['truth_ra'].unit = u.degree
+    truth_table['truth_dec'].unit = u.degree
     return truth_table
 
 
@@ -80,7 +74,7 @@ def get_diasrc_catalog(butler, data_id):
     """
 
     diasrc_table = Table(
-        names=['src_id', 'coord_ra', 'coord_dec', 'visit', 'filter',
+        names=['src_id', 'src_ra', 'src_dec', 'visit', 'filter',
                'detector'],
         dtype=[np.int64, float, float, np.int64, str, 'U10']
     )
@@ -94,8 +88,8 @@ def get_diasrc_catalog(butler, data_id):
         dec = source['coord_dec']
         diasrc_table.add_row([id_, ra, dec, visit, filter_, detector])
 
-    diasrc_table['coord_ra'].unit = u.rad
-    diasrc_table['coord_dec'].unit = u.rad
+    diasrc_table['src_ra'].unit = u.rad
+    diasrc_table['src_dec'].unit = u.rad
     return diasrc_table
 
 
@@ -114,19 +108,22 @@ def match_dataid(butler, data_id, truth_ctlg, radius):
 
     source_ctlg = get_diasrc_catalog(butler, data_id)
     source_skyc = SkyCoord(
-        ra=source_ctlg['coord_ra'], dec=source_ctlg['coord_dec'])
+        ra=source_ctlg['src_ra'], dec=source_ctlg['src_dec'])
 
     truth_skyc = SkyCoord(
-        ra=truth_ctlg['coord_ra'], dec=truth_ctlg['coord_dec'])
+        ra=truth_ctlg['truth_ra'], dec=truth_ctlg['truth_dec'])
 
     idx, d2d, d3d = truth_skyc.match_to_catalog_sky(source_skyc)
-
     sep_constraint = d2d < radius * u.arcsec
-    out_table = source_ctlg[idx][sep_constraint]
-    for col_name in ('uniqueId', 'ra', 'dec'):
-        out_table[col_name] = truth_ctlg[col_name][idx]
+    
+    print(truth_ctlg.colnames)
+    out_table = copy(truth_ctlg)
+    out_table.add_columns(list(source_ctlg[idx].itercols()))
 
-    return out_table
+    print(out_table.colnames)
+    out_table['d2d'] = d2d
+    print(out_table.colnames)
+    return out_table[sep_constraint]
 
 
 def match_dataid_list(butler, data_id_list, truth_ctlg, radius=1):
@@ -142,6 +139,7 @@ def match_dataid_list(butler, data_id_list, truth_ctlg, radius=1):
         Cross match results as an astropy table
     """
 
+    data_id_list = copy(data_id_list)
     first_id = data_id_list.pop()
     combined_table = match_dataid(butler, first_id, truth_ctlg, radius=radius)
     for data_id in data_id_list:
@@ -227,7 +225,14 @@ def run(diff_im_dir, out_dir, cutout_size):
     butler = dafPersist.Butler(diff_im_dir)
 
     tqdm.write('Checking for valid dataId values...')
-    data_id_list = get_valid_dataids(butler)
+    # data_id_list = get_valid_dataids(butler)
+    data_id_list = [
+         {'visit': 431306,
+          'filter': 'u',
+          'raftName': 'R10',
+          'detectorName': 'S01',
+          'detector': 28}
+     ]
 
     tqdm.write('Cross matching sources with truth catalog...')
     truth_ctlg = get_truth_catalog()
@@ -268,4 +273,4 @@ if __name__ == '__main__':
     if not out.exists():
         out.mkdir(parents=True, exist_ok=True)
 
-    run(args.diff_dir, out, args.cutout_size)
+    run(args.repo, out, args.cutout_size)
