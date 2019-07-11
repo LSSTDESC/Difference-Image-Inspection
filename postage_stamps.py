@@ -191,14 +191,11 @@ def save_stamps(butler, out_dir, data_id_list, cutout_size):
     """
 
     for data_id in tqdm(data_id_list, position=0, desc='Images'):
-        file_pattern = (
-            f"{data_id['visit']}-{data_id['filter']}-{data_id['raftName']}-"
-            f"{data_id['detectorName']}-{data_id['detector']}-{{}}.fits"
-        )
+        file_pattern = '{visit:08d}-{filter}-{detector:03d}_{source_id}.fits'
 
         sources = butler.get('deepDiff_diaSrc', dataId=data_id)
         for source in tqdm(sources, position=1, desc='Sources'):
-            out_path = out_dir / file_pattern.format(source['id'])
+            out_path = out_dir / file_pattern.format(source_id=source['id'], **data_id)
             x_pix = source['base_NaiveCentroid_x']
             y_pix = source['base_NaiveCentroid_y']
 
@@ -213,7 +210,7 @@ def save_stamps(butler, out_dir, data_id_list, cutout_size):
             )
 
 
-def main(diff_im_dir, out_dir, cutout_size):
+def run(diff_im_dir, out_dir, cutout_size):
     """Create postage stamps for all DIA sources
 
     Args:
@@ -251,7 +248,7 @@ if __name__ == '__main__':
         description='Create postage stamps from DIA pipeline results')
 
     parser.add_argument(
-        '-d', '--diff_dir',
+        '-r', '--repo',
         type=str,
         required=True,
         help='Path of DIA pipeline output directory')
@@ -273,4 +270,4 @@ if __name__ == '__main__':
     if not out.exists():
         out.mkdir(parents=True, exist_ok=True)
 
-    main(args.diff_dir, out, args.cutout_size)
+    run(args.diff_dir, out, args.cutout_size)
