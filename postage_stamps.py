@@ -12,7 +12,7 @@ gcr_catalogs_path = '/global/u1/d/djp81/gcr-catalogs'
 sys.path.extend((site_pckgs_path, gcr_catalogs_path))
 
 import numpy as np
-from astropy.table import Table
+from astropy.table import Table, vstack
 from tqdm import tqdm
 from astropy.coordinates import SkyCoord
 from astropy import units as u
@@ -22,7 +22,7 @@ import lsst.afw.geom as afw_geom
 import lsst.daf.persistence as dafPersist
 
 
-def get_valid_ids(butler):
+def get_valid_dataids(butler, **kwargs):
     """Return all dataId values that exist
 
     Args:
@@ -33,7 +33,39 @@ def get_valid_ids(butler):
     """
 
     subset = butler.subset('deepDiff_diaSrc')
-    return [dr.dataId for dr in tqdm(subset) if dr.datasetExists()]
+    id_list = []
+    for dr in tqdm(subset):
+        if not dr.datasetExists():
+            break
+
+        data_id = dr.dataId
+        for key, value in kwargs.items():
+            if data_id[key] == value:
+                id_list.append(data_id)
+
+    return id_list
+
+
+def get_truth_catalog():
+    """Load catalog data from "dc2_truth_run1.2_variable_summary"
+
+    Returns:
+       A SourceCatalog object with id, coord_ra, and coord_dec fields
+    """
+
+    # Load truth data
+    truth_gcr = GCRCatalogs.load_catalog('dc2_truth_run1.2_variable_summary')
+    truth_data = truth_gcr.get_quantities([])
+
+    truth_table = Table(
+        data=[truth_data['uniqueId'], truth_data['ra'], truth_data['dec']],
+        names=['src_id', 'coord_ra', 'coord_dec'],
+        dtype=[np.int64, float, float]
+    )
+
+    truth_table['coord_ra'].unit = u.degree
+    truth_table['coord_dec'].unit = u.degree
+    return truth_table
 
 
 def get_diasrc_catalog(butler, data_id):
@@ -67,40 +99,20 @@ def get_diasrc_catalog(butler, data_id):
     return diasrc_table
 
 
-def get_truth_catalog():
-    """Load catalog data from "dc2_truth_run1.2_variable_summary"
-
-    Returns:
-       A SourceCatalog object with id, coord_ra, and coord_dec fields
-    """
-
-    # Load truth data
-    truth_gcr = GCRCatalogs.load_catalog('dc2_truth_run1.2_variable_summary')
-    truth_data = truth_gcr.get_quantities([])
-
-    truth_table = Table(
-        data=[truth_data['uniqueId'], truth_data['ra'], truth_data['dec']],
-        names=['src_id', 'coord_ra', 'coord_dec'],
-        dtype=[np.int64, float, float]
-    )
-
-    truth_table['coord_ra'].unit = u.degree
-    truth_table['coord_dec'].unit = u.degree
-    return truth_table
-
-
-def match_truth_catalog(source_ctlg, truth_ctlg, radius=1):
-    """Cross match DIA sources with the truth catalog
+def match_dataid(butler, data_id, truth_ctlg, radius):
+    """Cross match DIA sources from a given data Id with the truth catalog
 
     Args:
-        source_ctlg (SourceCatalog): A list of dataID values
-        truth_ctlg  (SourceCatalog): GCR truth catalog
-        radius            (float): Match radius in arcseconds (Default: 1)
+        butler     (Butler): A data access butler
+        data_id      (dict): A dictionary of values uniquely identifying an image
+        truth_ctlg  (Table): GCR truth catalog
+        radius      (float): Match radius in arc-seconds (Default: 1)
 
     Returns:
         Cross match results as an astropy table
     """
 
+    source_ctlg = get_diasrc_catalog(butler, data_id)
     source_skyc = SkyCoord(
         ra=source_ctlg['coord_ra'], dec=source_ctlg['coord_dec'])
 
@@ -117,6 +129,28 @@ def match_truth_catalog(source_ctlg, truth_ctlg, radius=1):
     return out_table
 
 
+def match_dataid_list(butler, data_id_list, truth_ctlg, radius=1):
+    """Cross match DIA sources from a list of data Ids with the truth catalog
+
+    Args:
+        butler           (Butler): A data access butler
+        data_id_list (list[dict]): A list of data identifiers
+        truth_ctlg        (Table): GCR truth catalog
+        radius            (float): Match radius in arc-seconds (Default: 1)
+
+    Returns:
+        Cross match results as an astropy table
+    """
+
+    first_id = data_id_list.pop()
+    combined_table = match_dataid(butler, first_id, truth_ctlg, radius=radius)
+    for data_id in data_id_list:
+        match_table = match_dataid(butler, data_id, truth_ctlg, radius=radius)
+        combined_table = vstack(combined_table, match_table)
+
+    return combined_table
+
+
 def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length,
                          dataset_type='deepDiff_differenceExp'):
     """Create a singe postage stamp and save it to file
@@ -124,7 +158,7 @@ def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length,
     Args:
         butler     (Butler): A data access butler
         out_path      (str): Output path of fits file
-        data         (dict): A valid data identifier
+        data_id      (dict): A valid data identifier
         xpix        (float): x pixel coordinate of cutout in degrees
         ypix        (float): y pixel coordinate of cutout in degrees
         side_length (float): Side length of cutout in pixels
@@ -193,16 +227,12 @@ def run(diff_im_dir, out_dir, cutout_size):
     butler = dafPersist.Butler(diff_im_dir)
 
     tqdm.write('Checking for valid dataId values...')
-    data_id_list = get_valid_ids(butler)
+    data_id_list = get_valid_dataids(butler)
 
-    tqdm.write('Building source catalog...')
-    src_ctlg = get_diasrc_catalog(butler, data_id_list)
-
-    tqdm.write('Building truth catalog...')
+    tqdm.write('Cross matching sources with truth catalog...')
     truth_ctlg = get_truth_catalog()
+    xm_results = match_dataid_list(butler, data_id_list, truth_ctlg)
 
-    tqdm.write('Cross matching with truth catalog...')
-    xm_results = match_truth_catalog(src_ctlg, truth_ctlg)
     out_path = out_dir / 'xmatch.csv'
     tqdm.write(f'Writing to {out_path}')
     xm_results.write(out_path, overwrite=True)
