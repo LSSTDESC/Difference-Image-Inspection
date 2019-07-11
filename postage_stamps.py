@@ -114,15 +114,13 @@ def match_dataid(butler, data_id, truth_ctlg, radius):
         ra=truth_ctlg['truth_ra'], dec=truth_ctlg['truth_dec'])
 
     idx, d2d, d3d = truth_skyc.match_to_catalog_sky(source_skyc)
-    sep_constraint = d2d < radius * u.arcsec
-    
-    print(truth_ctlg.colnames)
+
     out_table = copy(truth_ctlg)
     out_table.add_columns(list(source_ctlg[idx].itercols()))
-
-    print(out_table.colnames)
     out_table['d2d'] = d2d
-    print(out_table.colnames)
+
+    # Only keep matches within radius
+    sep_constraint = d2d < radius * u.arcsec
     return out_table[sep_constraint]
 
 
@@ -189,12 +187,13 @@ def save_stamps(butler, out_dir, data_id_list, cutout_size):
     """
 
     for data_id in tqdm(data_id_list, position=0, desc='Images'):
-        file_pattern = '{visit:08d}-{filter}-{detector:03d}_{source_id}.fits'
+        sub_dir_name = '{visit:08d}-{filter}-{detector:03d}'.format(**data_id)
+        out_sub_dir = out_dir / sub_dir_name
+        out_sub_dir.mkdir(exist_ok=True)
 
         sources = butler.get('deepDiff_diaSrc', dataId=data_id)
         for source in tqdm(sources, position=1, desc='Sources'):
-            out_path = out_dir / file_pattern.format(
-                source_id=source['id'], **data_id)
+            out_path = out_sub_dir / f'{source["id"]}.fits'
 
             x_pix = source['base_NaiveCentroid_x']
             y_pix = source['base_NaiveCentroid_y']
@@ -225,14 +224,7 @@ def run(diff_im_dir, out_dir, cutout_size):
     butler = dafPersist.Butler(diff_im_dir)
 
     tqdm.write('Checking for valid dataId values...')
-    # data_id_list = get_valid_dataids(butler)
-    data_id_list = [
-         {'visit': 431306,
-          'filter': 'u',
-          'raftName': 'R10',
-          'detectorName': 'S01',
-          'detector': 28}
-     ]
+    data_id_list = get_valid_dataids(butler)
 
     tqdm.write('Cross matching sources with truth catalog...')
     truth_ctlg = get_truth_catalog()
@@ -270,7 +262,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     out = Path(args.out_dir)
-    if not out.exists():
-        out.mkdir(parents=True, exist_ok=True)
-
+    out.mkdir(parents=True, exist_ok=True)
     run(args.repo, out, args.cutout_size)
