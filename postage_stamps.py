@@ -14,10 +14,11 @@ sys.path.extend((site_pckgs_path, gcr_catalogs_path))
 import numpy as np
 from astropy.table import Table
 from tqdm import tqdm
+from astropy.coordinates import SkyCoord
+from astropy import units as u
 
 import GCRCatalogs
 import lsst.afw.geom as afw_geom
-import lsst.afw.table as afw_table
 import lsst.daf.persistence as dafPersist
 
 
@@ -35,48 +36,35 @@ def get_valid_ids(butler):
     return [dr.dataId for dr in tqdm(subset) if dr.datasetExists()]
 
 
-def get_diasrc_catalog(butler, data_id_list):
-    """For a collection of data Ids, return a catalog of all DIA sources
+def get_diasrc_catalog(butler, data_id):
+    """For a collection of data Ids, return a table of all DIA sources
 
     Args:
-        butler           (Butler): A data access butler
-        data_id_list (list[dict]): A list of dataID values
+        butler (Butler): A data access butler
+        data_id  (dict): A dictionary of values uniquely identifying an image
 
     Returns:
-       A SourceCatalog object with id, coord_ra, and coord_dec fields
+       An astropy table
     """
 
-    dia_schema = afw_table.SourceTable.makeMinimalSchema()
-    dia_schema.addField('visit', type=np.int64, doc='Visit id')
-    dia_schema.addField('filter', type=str, size=1)
-    dia_schema.addField('raftName', type=str, size=3)
-    dia_schema.addField('detectorName', type=str, size=6)
-    dia_schema.addField('detector', type=np.int32, doc='detector')
-    src_catalog = afw_table.SourceCatalog(dia_schema)
+    diasrc_table = Table(
+        names=['src_id', 'coord_ra', 'coord_dec', 'visit', 'filter',
+               'detector'],
+        dtype=[np.int64, float, float, np.int64, str, 'U10']
+    )
 
-    for data_id in tqdm(data_id_list):
-        visit = data_id['visit']
-        filter_ = data_id['filter']
-        raft_name = data_id['raftName']
-        detector_name = data_id['detectorName']
-        detector = data_id['detector']
+    visit = data_id['visit']
+    filter_ = data_id['filter']
+    detector = data_id['detector']
+    for source in butler.get('deepDiff_diaSrc', dataId=data_id):
+        id_ = source['id']
+        ra = source['coord_ra']
+        dec = source['coord_dec']
+        diasrc_table.add_row([id_, ra, dec, visit, filter_, detector])
 
-        for source in butler.get('deepDiff_diaSrc', dataId=data_id):
-            id_ = source['id']
-            ra = afw_geom.Angle(source['coord_ra'], afw_geom.radians)
-            dec = afw_geom.Angle(source['coord_dec'], afw_geom.radians)
-
-            record = src_catalog.addNew()
-            record.set('id', id_)
-            record.set('coord_ra', ra)
-            record.set('coord_dec', dec)
-            record.set('visit', visit)
-            record.set('filter', filter_)
-            record.set('raftName', raft_name)
-            record.set('detectorName', detector_name)
-            record.set('detector', detector)
-
-    return src_catalog
+    diasrc_table['coord_ra'].unit = u.rad
+    diasrc_table['coord_dec'].unit = u.rad
+    return diasrc_table
 
 
 def get_truth_catalog():
@@ -88,24 +76,17 @@ def get_truth_catalog():
 
     # Load truth data
     truth_gcr = GCRCatalogs.load_catalog('dc2_truth_run1.2_variable_summary')
-    truth_data = truth_gcr.get_quantities(['uniqueId', 'ra', 'dec'])
-    truth_data_zip = zip(truth_data['uniqueId'], truth_data['ra'],
-                         truth_data['dec'])
+    truth_data = truth_gcr.get_quantities([])
 
-    # Create an empty catalog and populate
-    # minimal schema only contains the `id`, `coord_ra`, and `coord_dec` fields
-    truth_schema = afw_table.SourceTable.makeMinimalSchema()
-    truth_catalog = afw_table.SourceCatalog(truth_schema)
+    truth_table = Table(
+        data=[truth_data['uniqueId'], truth_data['ra'], truth_data['dec']],
+        names=['src_id', 'coord_ra', 'coord_dec'],
+        dtype=[np.int64, float, float]
+    )
 
-    # Populate catalog
-    data_iter = tqdm(truth_data_zip, total=len(truth_data['uniqueId']))
-    for id_, ra, dec in data_iter:
-        record = truth_catalog.addNew()
-        record.set('id', id_)
-        record.set('coord_ra', afw_geom.Angle(ra, afw_geom.degrees))
-        record.set('coord_dec', afw_geom.Angle(dec, afw_geom.degrees))
-
-    return truth_catalog
+    truth_table['coord_ra'].unit = u.degree
+    truth_table['coord_dec'].unit = u.degree
+    return truth_table
 
 
 def match_truth_catalog(source_ctlg, truth_ctlg, radius=1):
@@ -120,35 +101,18 @@ def match_truth_catalog(source_ctlg, truth_ctlg, radius=1):
         Cross match results as an astropy table
     """
 
-    radius = afw_geom.Angle(radius, afw_geom.arcseconds)
-    matches = afw_table.matchRaDec(source_ctlg, truth_ctlg, radius)
+    source_skyc = SkyCoord(
+        ra=source_ctlg['coord_ra'], dec=source_ctlg['coord_dec'])
 
-    out_table = Table(
-        names=['src_id', 'src_ra', 'src_dec', 'truth_id', 'truth_ra',
-               'truth_dec', 'sep', 'visit', 'filter', 'raftName',
-               'detectorName', 'detector'],
-        dtype=[int, float, float, int, float, float, float, int, 'U100',
-               'U100', 'U100', int]
-    )
+    truth_skyc = SkyCoord(
+        ra=truth_ctlg['coord_ra'], dec=truth_ctlg['coord_dec'])
 
-    for match in matches:
-        src_id = match.first['id']
-        src_ra = match.first['coord_ra']
-        src_dec = match.first['coord_dec']
-        truth_id = match.second['id']
-        truth_ra = match.second['coord_ra']
-        truth_dec = match.second['coord_dec']
-        sep = np.degrees(match.distance) * 3600 * 1000
-        visit = match.first['visit']
-        filter_ = match.first['filter']
-        raft_name = match.first['raftName']
-        detector_name = match.first['detectorName']
-        detector = match.first['detector']
+    idx, d2d, d3d = truth_skyc.match_to_catalog_sky(source_skyc)
 
-        out_table.add_row(
-            [src_id, src_ra, src_dec, truth_id,
-             truth_ra, truth_dec, sep, visit, filter_, raft_name,
-             detector_name, detector])
+    sep_constraint = d2d < radius * u.arcsec
+    out_table = source_ctlg[idx][sep_constraint]
+    for col_name in ('uniqueId', 'ra', 'dec'):
+        out_table[col_name] = truth_ctlg[col_name][idx]
 
     return out_table
 
@@ -172,7 +136,7 @@ def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length,
     bbox = afw_geom.BoxI(xy - cutout_size // 2, cutout_size)
 
     cutout_image = butler.get(
-        dataset_type=f'{dataset_type}_sub',
+        datasetType=f'{dataset_type}_sub',
         bbox=bbox,
         immediate=True,
         dataId=data_id)
@@ -197,7 +161,9 @@ def save_stamps(butler, out_dir, data_id_list, cutout_size):
 
         sources = butler.get('deepDiff_diaSrc', dataId=data_id)
         for source in tqdm(sources, position=1, desc='Sources'):
-            out_path = out_dir / file_pattern.format(source_id=source['id'], **data_id)
+            out_path = out_dir / file_pattern.format(
+                source_id=source['id'], **data_id)
+
             x_pix = source['base_NaiveCentroid_x']
             y_pix = source['base_NaiveCentroid_y']
 
