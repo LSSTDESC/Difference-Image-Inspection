@@ -153,7 +153,8 @@ def match_truth_catalog(source_ctlg, truth_ctlg, radius=1):
     return out_table
 
 
-def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length):
+def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length,
+                         dataset_type='deepDiff_differenceExp'):
     """Create a singe postage stamp and save it to file
 
     Args:
@@ -163,6 +164,7 @@ def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length):
         xpix        (float): x pixel coordinate of cutout in degrees
         ypix        (float): y pixel coordinate of cutout in degrees
         side_length (float): Side length of cutout in pixels
+        dataset_type  (str): Name of data set to create postage stamp for
     """
 
     cutout_size = afw_geom.ExtentI(side_length, side_length)
@@ -170,7 +172,7 @@ def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length):
     bbox = afw_geom.BoxI(xy - cutout_size // 2, cutout_size)
 
     cutout_image = butler.get(
-        'deepDiff_differenceExp_sub',
+        dataset_type=f'{dataset_type}_sub',
         bbox=bbox,
         immediate=True,
         dataId=data_id)
