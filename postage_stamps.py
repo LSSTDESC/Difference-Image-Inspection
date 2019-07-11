@@ -13,7 +13,7 @@ gcr_catalogs_path = '/global/u1/d/djp81/gcr-catalogs'
 sys.path.extend((site_pckgs_path, gcr_catalogs_path))
 
 import numpy as np
-from astropy.table import Table, vstack, hstack
+from astropy.table import Table, vstack
 from tqdm import tqdm
 from astropy.coordinates import SkyCoord
 from astropy import units as u
@@ -21,6 +21,7 @@ from astropy import units as u
 import GCRCatalogs
 import lsst.afw.geom as afw_geom
 import lsst.daf.persistence as dafPersist
+from lsst.pex.exceptions import LengthError
 
 
 def get_valid_dataids(butler, **kwargs):
@@ -165,13 +166,18 @@ def create_postage_stamp(butler, out_path, data_id, xpix, ypix, side_length,
     xy = afw_geom.PointI(xpix, ypix)
     bbox = afw_geom.BoxI(xy - cutout_size // 2, cutout_size)
 
-    cutout_image = butler.get(
-        datasetType=f'{dataset_type}_sub',
-        bbox=bbox,
-        immediate=True,
-        dataId=data_id)
+    try:
+        cutout_image = butler.get(
+            datasetType=f'{dataset_type}_sub',
+            bbox=bbox,
+            immediate=True,
+            dataId=data_id)
 
-    cutout_image.writeFits(str(out_path))
+    except LengthError:
+        pass
+
+    else:
+        cutout_image.writeFits(str(out_path))
 
 
 def save_stamps(butler, out_dir, data_id_list, cutout_size):
