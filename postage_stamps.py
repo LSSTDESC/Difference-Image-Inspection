@@ -13,7 +13,7 @@ gcr_catalogs_path = '/global/u1/d/djp81/gcr-catalogs'
 sys.path.extend((site_pckgs_path, gcr_catalogs_path))
 
 import numpy as np
-from astropy.table import Table, vstack
+from astropy.table import Table, hstack, vstack
 from tqdm import tqdm
 from astropy.coordinates import SkyCoord
 from astropy import units as u
@@ -60,16 +60,16 @@ def get_truth_catalog(catalog_name):
 
     truth_table = Table(
         data=[truth_data['uniqueId'], truth_data['ra'], truth_data['dec']],
-        names=['truth_id', 'truth_ra', 'truth_dec'],
+        names=['truth_id', 'ra', 'dec'],
         dtype=[np.int64, float, float]
     )
 
-    truth_table['truth_ra'].unit = u.degree
-    truth_table['truth_dec'].unit = u.degree
+    truth_table['ra'].unit = u.degree
+    truth_table['dec'].unit = u.degree
     return truth_table
 
 
-def get_diasrc_catalog(butler, data_id):
+def get_diasrc_for_id(butler, data_id):
     """For a collection of data Ids, return a table of all DIA sources
 
     Args:
@@ -80,23 +80,14 @@ def get_diasrc_catalog(butler, data_id):
        An astropy table
     """
 
-    diasrc_table = Table(
-        names=['src_id', 'src_ra', 'src_dec', 'visit', 'filter',
-               'detector'],
-        dtype=[np.int64, float, float, np.int64, str, 'U10']
-    )
+    diasrc_cat = butler.get('deepDiff_diaSrc', dataId=data_id).asAstropy
+    diasrc_table = diasrc_cat['id', 'coord_ra', 'coord_dec']
+    diasrc_table['visit'] = data_id['visit']
+    diasrc_table['filter'] = data_id['filter']
+    diasrc_table['detector'] = data_id['detector']
 
-    visit = data_id['visit']
-    filter_ = data_id['filter']
-    detector = data_id['detector']
-    for source in butler.get('deepDiff_diaSrc', dataId=data_id):
-        id_ = source['id']
-        ra = source['coord_ra']
-        dec = source['coord_dec']
-        diasrc_table.add_row([id_, ra, dec, visit, filter_, detector])
-
-    diasrc_table['src_ra'].unit = u.rad
-    diasrc_table['src_dec'].unit = u.rad
+    diasrc_table['coord_ra'].unit = u.rad
+    diasrc_table['coord_dec'].unit = u.rad
     return diasrc_table
 
 
@@ -113,22 +104,19 @@ def match_data_id(butler, data_id, truth_ctlg, radius):
         Cross match results as an astropy table
     """
 
-    source_ctlg = get_diasrc_catalog(butler, data_id)
-    source_skyc = SkyCoord(
-        ra=source_ctlg['src_ra'], dec=source_ctlg['src_dec'])
-
-    truth_skyc = SkyCoord(
-        ra=truth_ctlg['truth_ra'], dec=truth_ctlg['truth_dec'])
+    source_ctlg = get_diasrc_for_id(butler, data_id)
+    source_skyc = SkyCoord(ra=source_ctlg['ra'], dec=source_ctlg['dec'])
+    truth_skyc = SkyCoord(ra=truth_ctlg['ra'], dec=truth_ctlg['dec'])
 
     idx, d2d, d3d = truth_skyc.match_to_catalog_sky(source_skyc)
 
-    out_table = copy(truth_ctlg)
-    out_table.add_columns(list(source_ctlg[idx].itercols()))
-    out_table['d2d'] = d2d
+    matched_data = source_ctlg[idx]
+    out_data = hstack([truth_ctlg, matched_data], table_names=['truth', 'src'])
+    out_data['d2d'] = d2d
 
     # Only keep matches within radius
     sep_constraint = d2d < radius * u.arcsec
-    return out_table[sep_constraint]
+    return out_data[sep_constraint]
 
 
 def match_data_id_list(butler, data_id_list, truth_ctlg, radius=1):
