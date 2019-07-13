@@ -43,14 +43,14 @@ def get_valid_dataids(butler, dataset_type):
 
 
 def get_truth_catalog(catalog_name):
-    """Load object ids, ra, and dec a truth catalog
+    """Load Id, RA, and Dec values from a truth catalog
 
     Args:
         catalog_name (str): Name of the catalog to load
             (e.g. "dc2_truth_run1.2_variable_summary")
 
     Returns:
-       A SourceCatalog object with id, coord_ra, and coord_dec fields
+       An astropy table object with id, ra, and dec fields
     """
 
     # Load truth data
@@ -59,7 +59,7 @@ def get_truth_catalog(catalog_name):
 
     truth_table = Table(
         data=[truth_data['uniqueId'], truth_data['ra'], truth_data['dec']],
-        names=['truth_id', 'ra', 'dec'],
+        names=['id', 'ra', 'dec'],
         dtype=[np.int64, float, float]
     )
 
@@ -79,14 +79,13 @@ def get_diasrc_for_id(butler, dataid):
        An astropy table
     """
 
-    diasrc_cat = butler.get('deepDiff_diaSrc', dataId=dataid).asAstropy
-    diasrc_table = diasrc_cat['id', 'coord_ra', 'coord_dec']
+    diasrc_cat = butler.get('deepDiff_diaSrc', dataId=dataid).asAstropy()
+    diasrc_table = Table([diasrc_cat['id']])
+    diasrc_table['ra'] = diasrc_cat['coord_ra'].to('deg')
+    diasrc_table['dec'] = diasrc_cat['coord_dec'].to('deg')
     diasrc_table['visit'] = dataid['visit']
     diasrc_table['filter'] = dataid['filter']
     diasrc_table['detector'] = dataid['detector']
-
-    diasrc_table['coord_ra'].unit = u.rad
-    diasrc_table['coord_dec'].unit = u.rad
     return diasrc_table
 
 
@@ -108,8 +107,8 @@ def match_dataid(butler, dataid, truth_ctlg, radius):
     truth_skyc = SkyCoord(ra=truth_ctlg['ra'], dec=truth_ctlg['dec'])
 
     idx, d2d, d3d = truth_skyc.match_to_catalog_sky(source_skyc)
-
     matched_data = source_ctlg[idx]
+
     out_data = hstack([truth_ctlg, matched_data], table_names=['truth', 'src'])
     out_data['d2d'] = d2d
 
@@ -136,7 +135,6 @@ def match_dataid_list(butler, dataid_list, truth_ctlg, radius=1):
         tables.append(match_dataid(butler, dataid, truth_ctlg, radius=radius))
 
     combined_table = vstack(tables)
-
     return combined_table
 
 
