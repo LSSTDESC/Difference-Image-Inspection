@@ -69,7 +69,7 @@ def get_truth_catalog(catalog_name):
 
 
 def get_diasrc_for_id(butler, dataid):
-    """For a collection of data Ids, return a table of all DIA sources
+    """For a given data Id, return a table of all DIA sources
 
     Args:
         butler (Butler): A data access butler
