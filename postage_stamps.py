@@ -24,32 +24,38 @@ import lsst.daf.persistence as dafPersist
 from lsst.pex.exceptions import LengthError
 
 
-def get_valid_dataids(butler, **kwargs):
-    """Return all dataId values that exist
+def get_valid_dataids(butler, dataset_type):
+    """Return all data Id values that exist for a given data set
 
     Args:
-        butler (Butler): A data access butler
+        butler    (Butler): A data access butler
+        dataset_type (str): The name of the data set to load
 
     Returns:
         A list of dataID values
     """
 
-    subset = butler.subset('deepDiff_diaSrc')
+    subset = butler.subset(dataset_type)
     id_list = [dr.dataId for dr in tqdm(subset) if dr.datasetExists()]
     if not id_list:
         raise RuntimeError('No valid dataId found.')
+
     return id_list
 
 
-def get_truth_catalog():
-    """Load catalog data from "dc2_truth_run1.2_variable_summary"
+def get_truth_catalog(catalog_name):
+    """Load object ids, ra, and dec a truth catalog
+
+    Args:
+        catalog_name (str): Name of the catalog to load
+            (e.g. "dc2_truth_run1.2_variable_summary")
 
     Returns:
        A SourceCatalog object with id, coord_ra, and coord_dec fields
     """
 
     # Load truth data
-    truth_gcr = GCRCatalogs.load_catalog('dc2_truth_run1.2_variable_summary')
+    truth_gcr = GCRCatalogs.load_catalog(catalog_name)
     truth_data = truth_gcr.get_quantities(['uniqueId', 'ra', 'dec'])
 
     truth_table = Table(
@@ -94,7 +100,7 @@ def get_diasrc_catalog(butler, data_id):
     return diasrc_table
 
 
-def match_dataid(butler, data_id, truth_ctlg, radius):
+def match_data_id(butler, data_id, truth_ctlg, radius):
     """Cross match DIA sources from a given data Id with the truth catalog
 
     Args:
@@ -125,7 +131,7 @@ def match_dataid(butler, data_id, truth_ctlg, radius):
     return out_table[sep_constraint]
 
 
-def match_dataid_list(butler, data_id_list, truth_ctlg, radius=1):
+def match_data_id_list(butler, data_id_list, truth_ctlg, radius=1):
     """Cross match DIA sources from a list of data Ids with the truth catalog
 
     Args:
@@ -140,9 +146,9 @@ def match_dataid_list(butler, data_id_list, truth_ctlg, radius=1):
 
     data_id_list = copy(data_id_list)
     first_id = data_id_list.pop()
-    combined_table = match_dataid(butler, first_id, truth_ctlg, radius=radius)
+    combined_table = match_data_id(butler, first_id, truth_ctlg, radius=radius)
     for data_id in data_id_list:
-        match_table = match_dataid(butler, data_id, truth_ctlg, radius=radius)
+        match_table = match_data_id(butler, data_id, truth_ctlg, radius=radius)
         combined_table = vstack(combined_table, match_table)
 
     return combined_table
@@ -206,13 +212,7 @@ def save_stamps(butler, out_dir, data_id_list, cutout_size):
 
             # noinspection PyTypeChecker
             create_postage_stamp(
-                butler,
-                out_path,
-                data_id,
-                x_pix,
-                y_pix,
-                cutout_size
-            )
+                butler, out_path, data_id, x_pix, y_pix, cutout_size)
 
 
 def run(diff_im_dir, out_dir, cutout_size):
@@ -230,11 +230,11 @@ def run(diff_im_dir, out_dir, cutout_size):
     butler = dafPersist.Butler(diff_im_dir)
 
     tqdm.write('Checking for valid dataId values...')
-    data_id_list = get_valid_dataids(butler)
+    data_id_list = get_valid_dataids(butler, 'deepDiff_diaSrc')
 
     tqdm.write('Cross matching sources with truth catalog...')
-    truth_ctlg = get_truth_catalog()
-    xm_results = match_dataid_list(butler, data_id_list, truth_ctlg)
+    truth_ctlg = get_truth_catalog('dc2_truth_run1.2_variable_summary')
+    xm_results = match_data_id_list(butler, data_id_list, truth_ctlg)
 
     out_path = out_dir / 'xmatch.csv'
     tqdm.write(f'Writing to {out_path}')
