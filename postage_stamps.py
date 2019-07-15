@@ -134,8 +134,7 @@ def match_dataid_list(butler, dataid_list, truth_ctlg, radius=1):
     for dataid in dataid_list:
         tables.append(match_dataid(butler, dataid, truth_ctlg, radius=radius))
 
-    combined_table = vstack(tables)
-    return combined_table
+    return vstack(tables)
 
 
 def create_postage_stamp(butler, out_path, dataid, xpix, ypix, side_length,
