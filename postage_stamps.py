@@ -89,27 +89,27 @@ def get_diasrc_for_id(butler, dataid):
     return diasrc_table
 
 
-def match_dataid(butler, dataid, truth_ctlg, radius):
+def match_dataid(butler, dataid, truth_cat, radius):
     """Cross match DIA sources from a given data Id with the truth catalog
 
     Args:
-        butler    (Butler): A data access butler
-        dataid      (dict): A dictionary of values uniquely identifying an image
-        truth_ctlg (Table): GCR truth catalog
-        radius     (float): Match radius in arc-seconds (Default: 1)
+        butler   (Butler): A data access butler
+        dataid     (dict): A dictionary of values uniquely identifying an image
+        truth_cat (Table): GCR truth catalog
+        radius    (float): Match radius in arc-seconds (Default: 1)
 
     Returns:
         Cross match results as an astropy table
     """
 
-    source_ctlg = get_diasrc_for_id(butler, dataid)
-    source_skyc = SkyCoord(ra=source_ctlg['ra'], dec=source_ctlg['dec'])
-    truth_skyc = SkyCoord(ra=truth_ctlg['ra'], dec=truth_ctlg['dec'])
+    source_cat = get_diasrc_for_id(butler, dataid)
+    source_skycoord = SkyCoord(ra=source_cat['ra'], dec=source_cat['dec'])
+    truth_skycoord = SkyCoord(ra=truth_cat['ra'], dec=truth_cat['dec'])
 
-    idx, d2d, d3d = truth_skyc.match_to_catalog_sky(source_skyc)
-    matched_data = source_ctlg[idx]
+    idx, d2d, d3d = truth_skycoord.match_to_catalog_sky(source_skycoord)
+    matched_data = source_cat[idx]
 
-    out_data = hstack([truth_ctlg, matched_data], table_names=['truth', 'src'])
+    out_data = hstack([truth_cat, matched_data], table_names=['truth', 'src'])
     out_data['d2d'] = d2d
 
     # Only keep matches within radius
@@ -117,13 +117,13 @@ def match_dataid(butler, dataid, truth_ctlg, radius):
     return out_data[sep_constraint]
 
 
-def match_dataid_list(butler, dataid_list, truth_ctlg, radius=1):
+def match_dataid_list(butler, dataid_list, truth_cat, radius=1):
     """Cross match DIA sources from a list of data Ids with the truth catalog
 
     Args:
         butler          (Butler): A data access butler
         dataid_list (list[dict]): A list of data identifiers
-        truth_ctlg       (Table): GCR truth catalog
+        truth_cat        (Table): GCR truth catalog
         radius           (float): Match radius in arc-seconds (Default: 1)
 
     Returns:
@@ -132,7 +132,7 @@ def match_dataid_list(butler, dataid_list, truth_ctlg, radius=1):
 
     tables = []
     for dataid in dataid_list:
-        tables.append(match_dataid(butler, dataid, truth_ctlg, radius=radius))
+        tables.append(match_dataid(butler, dataid, truth_cat, radius=radius))
 
     return vstack(tables)
 
@@ -216,8 +216,8 @@ def run(diff_im_dir, out_dir, cutout_size):
     dataid_list = get_valid_dataids(butler, 'deepDiff_diaSrc')
 
     tqdm.write('Cross matching sources with truth catalog...')
-    truth_ctlg = get_truth_catalog('dc2_truth_run1.2_variable_summary')
-    xm_results = match_dataid_list(butler, dataid_list, truth_ctlg)
+    truth_cat = get_truth_catalog('dc2_truth_run1.2_variable_summary')
+    xm_results = match_dataid_list(butler, dataid_list, truth_cat)
 
     out_path = out_dir / 'xmatch.csv'
     tqdm.write(f'Writing to {out_path}')
