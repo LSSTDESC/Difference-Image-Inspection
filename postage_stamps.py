@@ -76,10 +76,15 @@ def get_diasrc_for_id(butler, dataid):
     """
 
     diasrc_cat = butler.get('deepDiff_diaSrc', dataId=dataid).asAstropy()
-    diasrc_table = diasrc_cat['id', 'coord_ra', 'coord_dec', 'visit', 'filter', 'detector']
+    print(diasrc_cat.colnames)
+    diasrc_table = diasrc_cat['id', 'coord_ra', 'coord_dec']
     diasrc_table['ra'] = diasrc_table['coord_ra'].to('deg')
     diasrc_table['dec'] = diasrc_table['coord_dec'].to('deg')
     diasrc_table.remove_columns(['coord_ra', 'coord_dec'])
+    
+    diasrc_table['visit'] = dataid['visit']
+    diasrc_table['filter'] = dataid['filter']
+    diasrc_table['detector'] = dataid['detector']
     return diasrc_table
 
 
