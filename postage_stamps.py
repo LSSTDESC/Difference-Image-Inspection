@@ -56,13 +56,9 @@ def get_truth_catalog(catalog_name):
     # Load truth data
     truth_gcr = GCRCatalogs.load_catalog(catalog_name)
     truth_data = truth_gcr.get_quantities(['uniqueId', 'ra', 'dec'])
+    truth_table = Table(truth_data)
 
-    truth_table = Table(
-        data=[truth_data['uniqueId'], truth_data['ra'], truth_data['dec']],
-        names=['id', 'ra', 'dec'],
-        dtype=[np.int64, float, float]
-    )
-
+    truth_table.rename_column('uniqueId', 'id')
     truth_table['ra'].unit = u.degree
     truth_table['dec'].unit = u.degree
     return truth_table
@@ -80,12 +76,10 @@ def get_diasrc_for_id(butler, dataid):
     """
 
     diasrc_cat = butler.get('deepDiff_diaSrc', dataId=dataid).asAstropy()
-    diasrc_table = Table([diasrc_cat['id']])
-    diasrc_table['ra'] = diasrc_cat['coord_ra'].to('deg')
-    diasrc_table['dec'] = diasrc_cat['coord_dec'].to('deg')
-    diasrc_table['visit'] = dataid['visit']
-    diasrc_table['filter'] = dataid['filter']
-    diasrc_table['detector'] = dataid['detector']
+    diasrc_table = diasrc_cat['id', 'coord_ra', 'coord_dec', 'visit', 'filter', 'detector']
+    diasrc_table['ra'] = diasrc_table['coord_ra'].to('deg')
+    diasrc_table['dec'] = diasrc_table['coord_dec'].to('deg')
+    diasrc_table.remove_columns(['coord_ra', 'coord_dec'])
     return diasrc_table
 
 
