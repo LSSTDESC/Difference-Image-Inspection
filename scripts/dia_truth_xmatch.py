@@ -22,6 +22,8 @@ from tqdm import tqdm
 
 import GCRCatalogs
 import lsst.daf.persistence as dafPersist
+import lsst.afw.geom as afwGeom
+from lsst.geom import SpherePoint
 
 from .postage_stamps import get_valid_dataids
 
@@ -107,14 +109,20 @@ def get_bbox_for_ids(butler, dataid_list, dataset_type):
         dataset_type       (str): The name of the data set to load
 
     Returns:
-        A list with one BBox object per object Id
+        A list with one BBox for each object Id
+        A list with the WCS for each Id
     """
 
-    return [butler.get(dataset_type, dataID=dataid).getBBox() for dataid in
-            dataid_list]
+    bbox_list, wcs_list = [], []
+    for dataid in dataid_list:
+        image = butler.get(dataset_type, dataID=dataid)
+        bbox_list.append(image.getBBox())
+        wcs_list.append(image.getWcs())
+
+    return bbox_list, wcs_list
 
 
-def get_catalog_bbox_indices(ra, dec, bbox_list):
+def get_catalog_bbox_indices(ra, dec, bbox_list, wcs_list):
     """Crop a table of targets to only include targets in a list of boundaries
 
     Args:
@@ -130,13 +138,21 @@ def get_catalog_bbox_indices(ra, dec, bbox_list):
         raise ValueError(
             f'Unequal number of ra / dec coordinates: {len(ra)} != {len(dec)}')
 
-    # Create spherepoint objects
-    # Check if each coord in in all bboxes
+    indices = []
+    for ra_coord, dec_coord in zip(ra, dec):
+        is_in = []
+        for bbox, wcs in zip(bbox_list, wcs_list):
+            radec = SpherePoint(ra_coord, dec_coord, afwGeom.degrees)
+            xy = afwGeom.PointI(wcs.skyToPixel(radec))
+            is_in.append(xy in bbox)
+
+        indices.append(all(is_in))
 
     return np.ones(len(ra))
 
 
-def match_dataid_list(butler, dataid_list, truth_cat, radius=1, bboxes=None):
+def match_dataid_list(butler, dataid_list, truth_cat, radius=1,
+                      bbox_list=None, wcs_list=None):
     """Cross match DIA sources from a list of data Ids with the truth catalog
 
     Args:
@@ -150,15 +166,17 @@ def match_dataid_list(butler, dataid_list, truth_cat, radius=1, bboxes=None):
     """
 
     tables = []
-    for dataid, bbox_list in zip(dataid_list, bboxes):
+    for dataid, bbox_this, wcs_this in zip(dataid_list, bbox_list, wcs_list):
+
         indices = get_catalog_bbox_indices(
-            truth_cat['ra'], truth_cat['dec'], bbox_list)
+            truth_cat['ra'], truth_cat['dec'], bbox_this, wcs_this)
 
         truth_cat_this = truth_cat[indices]
         source_cat = get_diasrc_catalog(butler, dataid)
-        tables.append(match_catalogs(source_cat, truth_cat_this, radius=radius))
+        tables.append(
+            match_catalogs(source_cat, truth_cat_this, radius=radius))
 
-        # Add targets to table that were not matched and mask unmatched data
+    # Todo: Add targets to table that were not matched and mask unmatched data
 
     return vstack(tables)
 
@@ -180,13 +198,15 @@ def run(diff_im_dir, out_path):
     dataid_list = get_valid_dataids(butler, 'deepDiff_diaSrc')
 
     tqdm.write('Getting tract / patch boundaries')
-    sky_bbox_list = get_bbox_for_ids(butler, dataid_list, 'deepCoadd_skymap')
-    visit_bbox_list = get_bbox_for_ids(butler, dataid_list, 'deepDiff_differenceExp')
-    all_bboxes = np.array([sky_bbox_list, visit_bbox_list]).T
+    sky_bbox, sky_wcs = get_bbox_for_ids(butler, dataid_list, 'deepCoadd_skymap')
+    visit_bbox, visit_wcs = get_bbox_for_ids(butler, dataid_list, 'deepDiff_differenceExp')
+    all_bboxes = np.array([sky_bbox, visit_bbox]).T
+    all_wcs = np.array([sky_wcs, visit_wcs]).T
 
     tqdm.write('Cross matching sources with truth catalog...')
     truth_cat = get_truth_catalog('dc2_truth_run1.2_variable_summary')
-    xm_results = match_dataid_list(butler, dataid_list, truth_cat, bboxes=all_bboxes)
+    xm_results = match_dataid_list(
+        butler, dataid_list, truth_cat, bbox_list=all_bboxes, wcs_list=all_wcs)
 
     out_path = out_path / 'xmatch.csv'
     tqdm.write(f'Writing to {out_path}')
