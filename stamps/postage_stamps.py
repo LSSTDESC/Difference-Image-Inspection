@@ -1,6 +1,10 @@
 #!/usr/bin/env python3.6
 # -*- coding: UTF-8 -*-
 
+"""This script creates postage stamps for all sources identified by
+the DIA pipeline.
+"""
+
 import argparse
 import sys
 from pathlib import Path
@@ -195,6 +199,9 @@ def save_stamps(butler, out_dir, dataid_list, cutout_size):
             # noinspection PyTypeChecker
             create_postage_stamp(
                 butler, out_path, dataid, x_pix, y_pix, cutout_size)
+    
+    # Clear console line
+    tqdm.write('\n')
 
 
 def run(diff_im_dir, out_dir, cutout_size):
