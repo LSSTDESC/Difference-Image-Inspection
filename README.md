@@ -1,7 +1,7 @@
 # Difference-Image-Inspection
-An inspection and comparison of DC2 image differencing algorithms
+An inspection and comparison of DC2 image differencing algorithms and results of the DIA pipeline.
 
-This repository is currently a dumping ground as we collect ongoing work from various places. Better organization to come.
+
 
 ## Project Goals
 
@@ -9,6 +9,9 @@ This repository is currently a dumping ground as we collect ongoing work from va
 2. Understand these failures on both a qualitative and mathematical level.
 3. Draw informed conclusions on challenges we will face on DC2 and what can be done about them.
 4. Possibly suggest improvements to the image subtraction pipeline that will be implimented for LSST
+5. Inspect properties of the sources identified by the DIA pipeline
+
+
 
 ## References / Resources:
 
@@ -21,9 +24,11 @@ This repository is currently a dumping ground as we collect ongoing work from va
 - [DMTN-021](https://dmtn-021.lsst.io): Implementation of Image Difference Decorrelation
 - [DMTN-061](https://dmtn-061.lsst.io): State of image subtraction in the LSST stack
 
-#### Repos
+#### Relevant Repos
 - [Difference Image Analysis Pipeline](https://github.com/LSSTDESC/dia_pipe)
 - [DC2 Analysis Tutorials](https://github.com/LSSTDESC/DC2-analysis)
+
+
 
 ## Running Image Subtraction at NERSC
 
@@ -54,17 +59,22 @@ The DIA pipeline can then be run for a specific visit as follows:
 source /global/cscratch1/sd/rearmstr/example_diffim/setup.sh
 
 imageDifferenceDriver.py /global/cscratch1/sd/rearmstr/example_diffim/Run1.2_data/rerun/coadd-v4 \
-    --output /global/u1/d/djp81/public/dia_zogy \
+    --output dia_output_dir \
     --id visit=431306 detector=28 \
-    -C diffimConfig.py \
+    -C stamps/diffimConfig.py \
     --config imageDifference.subtract='zogy' \
     --cores 4
 ```
 
-where the `--config imageDifference.subtract='zogy'` argument can be dropped to do an Alard & Lupton subtraction. This will run the DIA pipeline and save the results to the directory ``/global/u1/d/djp81/public/dia_zogy``. A subset of DIA results are available in `/global/u1/d/djp81/public/` for both the *ZOGY* and *Alard & Lupton* subtractions.
+where the `--config imageDifference.subtract='zogy'` argument can be dropped to do an Alard & Lupton subtraction. This example will run the DIA pipeline and save the results to the directory `dia_output_dir`. A subset of DIA results are available in `/global/u1/d/djp81/public/` for both the *ZOGY* and *Alard & Lupton* subtractions.
 
-Postage stamps can then be made for all sources in all images as follows:
+
+
+## Running Postage Stamps
+
+Postage stamps can be made for all sources in all images as follows:
 
 ```bash
-python postage_stamps.py -d ./dia_output -o ./stamps -s 100
+python stamps/postage_stamps.py -r dia_output_dir -o ./stamps -s 100
 ```
+where `dia_output_dir` is the same as defined above.

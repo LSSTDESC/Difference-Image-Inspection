@@ -8,7 +8,7 @@ from pathlib import Path
 # Todo: Find a way to do this that doesn't involve my user directory
 # User installed packages
 site_pckgs_path = '/global/u1/d/djp81/.local/lib/python3.6/site-packages'
-gcr_catalogs_path = '/global/u1/d/djp81/gcr-catalogs'
+gcr_catalogs_path = '/global/u1/d/djp81/public/gcr-catalogs'
 sys.path.extend((site_pckgs_path, gcr_catalogs_path))
 
 import numpy as np
