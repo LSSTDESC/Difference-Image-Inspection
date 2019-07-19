@@ -48,18 +48,22 @@ config.imageDifference.subtract['zogy'].zogyConfig.inImageSpace=False
 # config.getTemplate.retarget(GetCalexpAsTemplateTask)
 ```
 
-Image subtraction can then be run for a specific visit as follows:
+The DIA pipeline can then be run for a specific visit as follows:
 
 ```bash
 source /global/cscratch1/sd/rearmstr/example_diffim/setup.sh
 
 imageDifferenceDriver.py /global/cscratch1/sd/rearmstr/example_diffim/Run1.2_data/rerun/coadd-v4 \
-    --output ./dia_output --id visit=431306 detector=28 \
-    -C diffimConfig.py --config imageDifference.subtract='zogy' \
+    --output /global/u1/d/djp81/public/dia_zogy \
+    --id visit=431306 detector=28 \
+    -C diffimConfig.py \
+    --config imageDifference.subtract='zogy' \
     --cores 4
 ```
 
-where the `--config imageDifference.subtract='zogy'` argument can be dropped to do an Alard & Lupton subtraction. This will run the DIA pipeline and save the results to the directory ``./dia_output``. Postage stamps can then be made for all sources in all images as follows:
+where the `--config imageDifference.subtract='zogy'` argument can be dropped to do an Alard & Lupton subtraction. This will run the DIA pipeline and save the results to the directory ``/global/u1/d/djp81/public/dia_zogy``. A subset of DIA results are available in `/global/u1/d/djp81/public/` for both the *ZOGY* and *Alard & Lupton* subtractions.
+
+Postage stamps can then be made for all sources in all images as follows:
 
 ```bash
 python postage_stamps.py -d ./dia_output -o ./stamps -s 100
