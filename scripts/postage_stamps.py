@@ -109,7 +109,7 @@ def run(diff_im_dir, out_dir, cutout_size):
 
     Args:
         diff_im_dir   (str): Output directory of DIA pipeline
-        out_dir       (str): Directory to save postave stamps into
+        out_dir       (str): Directory to save postage stamps into
         cutout_size (float): Side length of postage stamps in pixels
     """
 

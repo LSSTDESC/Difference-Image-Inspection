@@ -5,6 +5,7 @@
 truth catalog.
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ site_pckgs_path = '/global/u1/d/djp81/.local/lib/python3.6/site-packages'
 gcr_catalogs_path = '/global/u1/d/djp81/public/gcr-catalogs'
 sys.path.extend((site_pckgs_path, gcr_catalogs_path))
 
+import numpy as np
 from astropy.table import Table, hstack, vstack
 from astropy.coordinates import SkyCoord
 from astropy import units as u
@@ -24,13 +26,12 @@ import lsst.daf.persistence as dafPersist
 from .postage_stamps import get_valid_dataids
 
 
-def get_diasrc_for_id(butler, dataid, bbox=None):
+def get_diasrc_catalog(butler, dataid):
     """For a given data Id, return a table of all DIA sources
 
     Args:
         butler (Butler): A data access butler
         dataid   (dict): A dictionary of values uniquely identifying an image
-        bbox     (BBox): Optionally return only targets within a bbox
 
     Returns:
        An astropy table
@@ -49,13 +50,12 @@ def get_diasrc_for_id(butler, dataid, bbox=None):
     return diasrc_table
 
 
-def get_truth_catalog(cat_name, bbox=None):
+def get_truth_catalog(cat_name):
     """Load Id, RA, and Dec values from a truth catalog
 
     Args:
         cat_name (str): Name of the catalog to load
             (e.g. "dc2_truth_run1.2_variable_summary")
-        bbox    (BBox): Optionally return only targets within a bbox
 
     Returns:
        An astropy table object with id, ra, and dec fields
@@ -72,27 +72,25 @@ def get_truth_catalog(cat_name, bbox=None):
     return truth_table
 
 
-def match_dataid(butler, dataid, truth_cat, radius):
-    """Cross match DIA sources from a given data Id with the truth catalog
+def match_catalogs(catalog1, catalog2, radius):
+    """positional cross match to find sources from catalog1 in catalog2
 
     Args:
-        butler   (Butler): A data access butler
-        dataid     (dict): A dictionary of values uniquely identifying an image
-        truth_cat (Table): GCR truth catalog
-        radius    (float): Match radius in arc-seconds (Default: 1)
+        catalog1 (Table): A dictionary of values uniquely identifying an image
+        catalog2 (Table): GCR truth catalog
+        radius   (float): Match radius in arc-seconds (Default: 1)
 
     Returns:
         Cross match results as an astropy table
     """
 
-    source_cat = get_diasrc_for_id(butler, dataid)
-    source_skycoord = SkyCoord(ra=source_cat['ra'], dec=source_cat['dec'])
-    truth_skycoord = SkyCoord(ra=truth_cat['ra'], dec=truth_cat['dec'])
+    source_skycoord = SkyCoord(ra=catalog1['ra'], dec=catalog1['dec'])
+    truth_skycoord = SkyCoord(ra=catalog2['ra'], dec=catalog2['dec'])
 
     idx, d2d, d3d = truth_skycoord.match_to_catalog_sky(source_skycoord)
-    matched_data = source_cat[idx]
+    matched_data = catalog1[idx]
 
-    out_data = hstack([truth_cat, matched_data], table_names=['truth', 'src'])
+    out_data = hstack([catalog2, matched_data], table_names=['truth', 'src'])
     out_data['d2d'] = d2d
 
     # Only keep matches within radius
@@ -100,7 +98,45 @@ def match_dataid(butler, dataid, truth_cat, radius):
     return out_data[sep_constraint]
 
 
-def match_dataid_list(butler, dataid_list, truth_cat, radius=1):
+def get_bbox_for_ids(butler, dataid_list, dataset_type):
+    """Return bbox objects for a lost of all data Id values
+
+    Args:
+        butler          (Butler): A data access butler
+        dataid_list (list[dict]): A list of dataID values
+        dataset_type       (str): The name of the data set to load
+
+    Returns:
+        A list with one BBox object per object Id
+    """
+
+    return [butler.get(dataset_type, dataID=dataid).getBBox() for dataid in
+            dataid_list]
+
+
+def get_catalog_bbox_indices(ra, dec, bbox_list):
+    """Crop a table of targets to only include targets in a list of boundaries
+
+    Args:
+        ra       (list[float]): Target RA coordinates
+        dec      (list[float]): Target Dec coordinates
+        bbox_list (list[BBox]): List of boundaries
+
+    Returns:
+        A list of booleans for whether each coordinate is in the boundaries
+    """
+
+    if not len(ra) == len(dec):
+        raise ValueError(
+            f'Unequal number of ra / dec coordinates: {len(ra)} != {len(dec)}')
+
+    # Create spherepoint objects
+    # Check if each coord in in all bboxes
+
+    return np.ones(len(ra))
+
+
+def match_dataid_list(butler, dataid_list, truth_cat, radius=1, bboxes=None):
     """Cross match DIA sources from a list of data Ids with the truth catalog
 
     Args:
@@ -114,21 +150,28 @@ def match_dataid_list(butler, dataid_list, truth_cat, radius=1):
     """
 
     tables = []
-    for dataid in dataid_list:
-        tables.append(match_dataid(butler, dataid, truth_cat, radius=radius))
+    for dataid, bbox_list in zip(dataid_list, bboxes):
+        indices = get_catalog_bbox_indices(
+            truth_cat['ra'], truth_cat['dec'], bbox_list)
+
+        truth_cat_this = truth_cat[indices]
+        source_cat = get_diasrc_catalog(butler, dataid)
+        tables.append(match_catalogs(source_cat, truth_cat_this, radius=radius))
+
+        # Add targets to table that were not matched and mask unmatched data
 
     return vstack(tables)
 
 
-def run(diff_im_dir, out_dir):
+def run(diff_im_dir, out_path):
     """Create postage stamps for all DIA sources
 
     Args:
-        diff_im_dir   (str): Output directory of DIA pipeline
-        out_dir       (str): Directory to save cross match results into
+        diff_im_dir (str): Output directory of DIA pipeline
+        out_path     (str): Directory to save cross match results into
     """
 
-    out_dir = Path(out_dir).resolve()
+    out_path = Path(out_path).resolve()
 
     tqdm.write('Initializing butler...')
     butler = dafPersist.Butler(diff_im_dir)
@@ -136,10 +179,37 @@ def run(diff_im_dir, out_dir):
     tqdm.write('Checking for valid dataId values...')
     dataid_list = get_valid_dataids(butler, 'deepDiff_diaSrc')
 
+    tqdm.write('Getting tract / patch boundaries')
+    sky_bbox_list = get_bbox_for_ids(butler, dataid_list, 'deepCoadd_skymap')
+    visit_bbox_list = get_bbox_for_ids(butler, dataid_list, 'deepDiff_differenceExp')
+    all_bboxes = np.array([sky_bbox_list, visit_bbox_list]).T
+
     tqdm.write('Cross matching sources with truth catalog...')
     truth_cat = get_truth_catalog('dc2_truth_run1.2_variable_summary')
-    xm_results = match_dataid_list(butler, dataid_list, truth_cat)
+    xm_results = match_dataid_list(butler, dataid_list, truth_cat, bboxes=all_bboxes)
 
-    out_path = out_dir / 'xmatch.csv'
+    out_path = out_path / 'xmatch.csv'
     tqdm.write(f'Writing to {out_path}')
     xm_results.write(out_path, overwrite=True)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Create postage stamps from DIA pipeline results')
+
+    parser.add_argument(
+        '-r', '--repo',
+        type=str,
+        required=True,
+        help='Path of DIA pipeline output directory')
+
+    parser.add_argument(
+        '-o', '--out_path',
+        type=str,
+        required=True,
+        help='Where to write postage stamps')
+
+    args = parser.parse_args()
+    out = Path(args.out_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    run(args.repo, out)
